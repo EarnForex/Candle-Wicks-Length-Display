@@ -1,6 +1,6 @@
-﻿#property copyright "Copyright © 2011-2022, www.EarnForex.com"
+﻿#property copyright "Copyright © 2023, www.EarnForex.com"
 #property link      "https://www.earnforex.com/metatrader-indicators/candle-wicks-length-display/"
-#property version   "1.09"
+#property version   "1.10"
 #property strict
 #property icon      "\\Files\\EF-Icon-64x64px.ico"
 
@@ -22,8 +22,10 @@ enum PipsPerc
 
 input PipsPerc Units = Pips; // Standard pips or percentage points.
 input int DisplayWickLimit = 5; // DisplayWickLimit in standard pips or %.
-input color DisplayHighWickColor = clrRed;
-input color DisplayLowWickColor = clrLimeGreen;
+input color DisplayHighWickColorBullish = clrRed;
+input color DisplayHighWickColorBearish = clrFireBrick;
+input color DisplayLowWickColorBullish = clrLimeGreen;
+input color DisplayLowWickColorBearish = clrGreen;
 input int UpperWickLimit = 10; // UpperWickLimit in broker pips or % for alerts.
 input int LowerWickLimit = 10; // LowerWickLimit in broker pips or % for alerts.
 input bool WaitForClose = true; // WaitForClose - Wait for a candle to close before checking wicks' length?
@@ -48,6 +50,7 @@ input ENUM_BASE_CORNER Corner = CORNER_LEFT_UPPER;
 input int Distance_X = 3;
 input int Distance_Y = 12;
 input bool DrawTextAsBackground = false; // DrawTextAsBackground: if true, the text will be drawn as background.
+input bool RemoveOldLabels = false; // RemoveOldLabels: Delete labels beyond MaxCandles?
 input string ObjectPrefix = "CWLD-";
 
 // Global variables.
@@ -158,15 +161,24 @@ int OnCalculate(const int rates_total,
             if (Units == Pips) length = DoubleToString(MathRound((High[i] - MathMax(Open[i], Close[i])) / Poin), 0);
             else if (Units == Percentage) length = DoubleToString(MathRound((High[i] - MathMax(Open[i], Close[i])) / (High[i] - Low[i]) * 100), 0);
             if (ObjectFind(0, name) != -1) ObjectDelete(0, name);
-            ObjectCreate(0, name, OBJ_TEXT, 0, Time[i], High[i]);
-            ObjectSetText(name, length, FontSize, FontFace, DisplayHighWickColor);
-            int visible_bars = (int)ChartGetInteger(0, CHART_VISIBLE_BARS);
-            int first_bar = (int)ChartGetInteger(0, CHART_FIRST_VISIBLE_BAR);
-            int last_bar = first_bar - visible_bars + 1;
-            if ((i <= first_bar) && (i >= last_bar)) RedrawOneWickLabel(i, last_bar);
-            ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
-            ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-            ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+            color object_color;
+            if (Close[i] >= Open[i]) object_color = DisplayHighWickColorBullish;
+            else object_color = DisplayHighWickColorBearish;
+            if (object_color != clrNONE)
+            {
+                ObjectCreate(0, name, OBJ_TEXT, 0, Time[i], High[i]);
+                ObjectSetString(0, name, OBJPROP_TEXT, length);
+                ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+                ObjectSetString(0, name, OBJPROP_FONT, FontFace);
+                ObjectSetInteger(0, name, OBJPROP_COLOR, object_color);
+                int visible_bars = (int)ChartGetInteger(0, CHART_VISIBLE_BARS);
+                int first_bar = (int)ChartGetInteger(0, CHART_FIRST_VISIBLE_BAR);
+                int last_bar = first_bar - visible_bars + 1;
+                if ((i <= first_bar) && (i >= last_bar)) RedrawOneWickLabel(i, last_bar);
+                ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
+                ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+                ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+            }
         }
         else // Remove tick labels that are no longer needed.
         {
@@ -189,11 +201,20 @@ int OnCalculate(const int rates_total,
             if (Units == Pips) length = DoubleToString(MathRound((MathMin(Open[i], Close[i]) - Low[i]) / Poin), 0);
             else if (Units == Percentage) length = DoubleToString(MathRound((MathMin(Open[i], Close[i]) - Low[i]) / (High[i] - Low[i]) * 100), 0);
             if (ObjectFind(0, name) != -1) ObjectDelete(0, name);
-            ObjectCreate(name, OBJ_TEXT, 0, Time[i], Low[i]);
-            ObjectSetText(name, length, FontSize, FontFace, DisplayLowWickColor);
-            ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
-            ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-            ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+            color object_color;
+            if (Close[i] >= Open[i]) object_color = DisplayLowWickColorBullish;
+            else object_color = DisplayLowWickColorBearish;
+            if (object_color != clrNONE)
+            {
+                ObjectCreate(0, name, OBJ_TEXT, 0, Time[i], Low[i]);
+                ObjectSetString(0, name, OBJPROP_TEXT, length);
+                ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+                ObjectSetString(0, name, OBJPROP_FONT, FontFace);
+                ObjectSetInteger(0, name, OBJPROP_COLOR, object_color);
+                ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
+                ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+                ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+            }
         }
         else // Remove tick labels that are no longer needed.
         {
@@ -202,6 +223,8 @@ int OnCalculate(const int rates_total,
         }
     }
 
+    if ((RemoveOldLabels) && (MaxCandles > 0)) ClearOldLabels();
+    
     if (ShowAverageWickSize)
     {
         limit = Bars;
@@ -238,6 +261,19 @@ int OnCalculate(const int rates_total,
         bool UpperPercentageCondition = ((Units == Percentage) && (((!LessThan) && (High[index] - MathMax(Open[index], Close[index])) / (High[index] - Low[index]) * 100 >= UpperWickLimit) || ((LessThan) && (High[index] - MathMax(Open[index], Close[index])) / (High[index] - Low[index]) * 100 <= UpperWickLimit)));
         bool LowerPipsCondition = ((Units == Pips) && (((!LessThan) && (NormalizeDouble(MathMin(Open[index], Close[index]) - Low[index], _Digits) >= NormalizeDouble(LowerWickLimit * Point(), _Digits))) || ((LessThan) && (NormalizeDouble(MathMin(Open[index], Close[index]) - Low[index], _Digits) <= NormalizeDouble(LowerWickLimit * Point(), _Digits)))));
         bool LowerPercentageCondition = ((Units == Percentage) && (((!LessThan) && (MathMin(Open[index], Close[index]) - Low[index]) / (High[index] - Low[index]) * 100 >= LowerWickLimit) || ((LessThan) && (MathMin(Open[index], Close[index]) - Low[index]) / (High[index] - Low[index]) * 100 <= LowerWickLimit)));
+
+        // Adjust for color == none disabling:
+        if (((Close[index] >= Low[index]) && (DisplayHighWickColorBullish == clrNONE)) || ((Close[index] < Low[index]) && (DisplayHighWickColorBearish == clrNONE)))
+        {
+            UpperPipsCondition = false;
+            UpperPercentageCondition = false;
+        }
+        if (((Close[index] >= Low[index]) && (DisplayLowWickColorBullish == clrNONE)) || ((Close[index] < Low[index]) && (DisplayLowWickColorBearish == clrNONE)))
+        {
+            LowerPipsCondition = false;
+            LowerPercentageCondition = false;
+        }
+
         if ((UpperPipsCondition) || (UpperPercentageCondition) || (LowerPipsCondition) || (LowerPercentageCondition))
             DoAlert = true;
 
@@ -279,7 +315,7 @@ int OnCalculate(const int rates_total,
     }
 
     CanDoAlerts = true;
-    
+
     return rates_total;
 }
 
@@ -317,5 +353,19 @@ void RedrawOneWickLabel(const int i, const int last_bar)
 string GenerateObjectName(const string prefix, const datetime time)
 {
     return(ObjectPrefix + prefix + TimeToString(time));
+}
+
+void ClearOldLabels()
+{
+    if (MaxCandles >= iBars(Symbol(), Period())) return; // Nothing to delete yet.
+    
+    int objects_total = ObjectsTotal(0, -1, OBJ_TEXT);
+    
+    for (int i = objects_total - 1; i >= 0; i--)
+    {
+        string object_name = ObjectName(0, i, -1, OBJ_TEXT);
+        datetime object_time = (datetime)ObjectGetInteger(0, object_name, OBJPROP_TIME, 0);
+        if (object_time <= Time[MaxCandles]) ObjectDelete(0, object_name);
+    }
 }
 //+------------------------------------------------------------------+
