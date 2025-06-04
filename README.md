@@ -6,6 +6,6 @@ You can use it to detect market abnormalities (it supports all kinds of MetaTrad
 
 ![Candle Wicks Length Display indicator highlights all wicks longer than 30 pips on AUD/USD chart](https://github.com/EarnForex/Candle-Wicks-Length-Display/blob/main/README_Images/candle-wicks-length-display-audusd-example.png)
 
-More information about this custom MetaTrader indicator is available here: https://www.earnforex.com/metatrader-indicators/candle-wicks-length-display/
+More information about this custom MetaTrader indicator is available here: https://www.earnforex.com/indicators/candle-wicks-length-display/
 
 Any contributions to the code are welcome!
