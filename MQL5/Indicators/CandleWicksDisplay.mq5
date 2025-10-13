@@ -1,6 +1,6 @@
-﻿#property copyright "Copyright © 2023, www.EarnForex.com"
-#property link      "https://www.earnforex.com/metatrader-indicators/candle-wicks-length-display/"
-#property version   "1.10"
+﻿#property copyright "Copyright © 2025, www.EarnForex.com"
+#property link      "https://www.earnforex.com/indicators/candle-wicks-length-display/"
+#property version   "1.11"
 #property icon      "\\Files\\EF-Icon-64x64px.ico"
 
 #property description "Displays the candle wicks' length above and below the candles."
@@ -8,6 +8,7 @@
 #property description "You can choose whether to use pips or %."
 #property description "Email settings are under Tools->Options->Email."
 #property description "Notifications settings are under Tools->Options->Notifications."
+#property description "Press Shift+C to hide/show labels."
 
 // The indicator uses only objects for display, but the line below is required for it to work.
 #property indicator_chart_window
@@ -19,27 +20,31 @@ enum PipsPerc
     Percentage
 };
 
+input group "Main"
 input PipsPerc Units = Pips; // Standard pips or percentage points.
 input int DisplayWickLimit = 5; // DisplayWickLimit in standard pips or %.
 input color DisplayHighWickColorBullish = clrRed;
 input color DisplayHighWickColorBearish = clrFireBrick;
 input color DisplayLowWickColorBullish = clrLimeGreen;
 input color DisplayLowWickColorBearish = clrGreen;
-input int UpperWickLimit = 10; // UpperWickLimit in broker pips or % for alerts.
-input int LowerWickLimit = 10; // LowerWickLimit in broker pips or % for alerts.
-input bool WaitForClose = true; // WaitForClose - Wait for a candle to close before checking wicks' length?
 // If > 0 and <= 100, displays length only for bars where Open & Close within top or bottom % of candle.
 input int TopBottomPercent = 0; // TopBottomPercent: Body within top/bottom percentage part.
 input bool LessThan = false; // LessThan: display wicks lower than DisplayWickLimit.
+input group "Alerts"
 input bool SoundAlert = false;
 input bool VisualAlert = false;
 input bool EmailAlert = false;
 input bool NotificationAlert = false;
 input bool AlertOnLimit = false;
+input int UpperWickLimit = 10; // UpperWickLimit in broker pips or % for alerts.
+input int LowerWickLimit = 10; // LowerWickLimit in broker pips or % for alerts.
 input bool AlertOnEqualTopBottomWicks = false;
 input bool IgnoreAlertsOnFirstRun = true;
+input bool WaitForClose = true; // WaitForClose - Wait for a candle to close before checking wicks' length?
+input group "Font"
 input string FontFace = "Verdana";
 input int FontSize = 10;
+input group "Miscellaneous"
 input int MaxCandles = 500;
 input bool UseRawPips = false; // UseRawPips: if true, will use points instead of pips.
 input bool ShowAverageWickSize = false; // Show average wick size
@@ -52,10 +57,11 @@ input bool DrawTextAsBackground = false; // DrawTextAsBackground: if true, the t
 input bool RemoveOldLabels = false; // RemoveOldLabels: Delete labels beyond MaxCandles?
 input string ObjectPrefix = "CWLD-";
 
-// Global variables.
+// Global variables:
 datetime AlertDone; // Time of the bar of the last alert.
 double Poin; // Traditional point value.
 bool CanDoAlerts; // Fuse to prevent alerts on initialization or timeframe change.
+bool Hidden = false; // Should all objects be hidden?
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                         |
@@ -74,6 +80,8 @@ void OnInit()
         ObjectSetInteger(ChartID(), ObjectPrefix + "Upper", OBJPROP_XDISTANCE, Distance_X);
         ObjectSetInteger(ChartID(), ObjectPrefix + "Upper", OBJPROP_YDISTANCE, Distance_Y);
         ObjectSetInteger(ChartID(), ObjectPrefix + "Upper", OBJPROP_BACK, DrawTextAsBackground);
+        ObjectSetString(ChartID(), ObjectPrefix + "Upper", OBJPROP_TOOLTIP, "");
+        ObjectSetInteger(ChartID(), ObjectPrefix + "Upper", OBJPROP_HIDDEN, true);
         // Average for lower wicks.
         ObjectCreate(ChartID(), ObjectPrefix + "Lower", OBJ_LABEL, 0, 0, 0);
         ObjectSetString(ChartID(), ObjectPrefix + "Lower", OBJPROP_TEXT, "");
@@ -84,6 +92,8 @@ void OnInit()
         ObjectSetInteger(ChartID(), ObjectPrefix + "Lower", OBJPROP_XDISTANCE, Distance_X);
         ObjectSetInteger(ChartID(), ObjectPrefix + "Lower", OBJPROP_YDISTANCE, Distance_Y + 12);
         ObjectSetInteger(ChartID(), ObjectPrefix + "Lower", OBJPROP_BACK, DrawTextAsBackground);
+        ObjectSetString(ChartID(), ObjectPrefix + "Lower", OBJPROP_TOOLTIP, "");
+        ObjectSetInteger(ChartID(), ObjectPrefix + "Lower", OBJPROP_HIDDEN, true);
         // Average for all wicks.
         ObjectCreate(ChartID(), ObjectPrefix + "All", OBJ_LABEL, 0, 0, 0);
         ObjectSetString(ChartID(), ObjectPrefix + "All", OBJPROP_TEXT, "");
@@ -94,6 +104,8 @@ void OnInit()
         ObjectSetInteger(ChartID(), ObjectPrefix + "All", OBJPROP_XDISTANCE, Distance_X);
         ObjectSetInteger(ChartID(), ObjectPrefix + "All", OBJPROP_YDISTANCE, Distance_Y + 24);
         ObjectSetInteger(ChartID(), ObjectPrefix + "All", OBJPROP_BACK, DrawTextAsBackground);
+        ObjectSetString(ChartID(), ObjectPrefix + "All", OBJPROP_TOOLTIP, "");
+        ObjectSetInteger(ChartID(), ObjectPrefix + "All", OBJPROP_HIDDEN, true);
     }
     
     Poin = _Point;
@@ -115,6 +127,64 @@ void OnChartEvent(const int id,
 {
     // Redraw wick labels.
     if (id == CHARTEVENT_CHART_CHANGE) RedrawVisibleWickLabels();
+    else if (id == CHARTEVENT_KEYDOWN)
+    {
+        // Shift+C:
+        if ((lparam == 'C') && (TerminalInfoInteger(TERMINAL_KEYSTATE_SHIFT) < 0))
+        {
+            if (Hidden) // Was hidden:
+            {
+                // Candlestick labels.
+                int obj_total = ObjectsTotal(ChartID(), -1, OBJ_TEXT);
+                // Show everything:
+                for (int i = 0; i < obj_total; i++)
+                {
+                    string obj_name = ObjectName(ChartID(), i, -1, OBJ_TEXT);
+                    if (StringSubstr(obj_name, 0, StringLen(ObjectPrefix)) != ObjectPrefix) continue;
+                    ObjectSetInteger(0, obj_name, OBJPROP_TIMEFRAMES, OBJ_ALL_PERIODS);
+                }
+                // Average wick sizes.
+                if (ShowAverageWickSize)
+                {
+                    obj_total = ObjectsTotal(ChartID(), -1, OBJ_LABEL);
+                    // Show everything:
+                    for (int i = 0; i < obj_total; i++)
+                    {
+                        string obj_name = ObjectName(ChartID(), i, -1, OBJ_LABEL);
+                        if (StringSubstr(obj_name, 0, StringLen(ObjectPrefix)) != ObjectPrefix) continue;
+                        ObjectSetInteger(0, obj_name, OBJPROP_TIMEFRAMES, OBJ_ALL_PERIODS);
+                    }
+                }
+                Hidden = false; // No longer hidden.
+            }
+            else // Was shown:
+            {
+                // Candlestick labels.
+                int obj_total = ObjectsTotal(ChartID(), -1, OBJ_TEXT);
+                // Hide everything:
+                for (int i = 0; i < obj_total; i++)
+                {
+                    string obj_name = ObjectName(ChartID(), i, -1, OBJ_TEXT);
+                    if (StringSubstr(obj_name, 0, StringLen(ObjectPrefix)) != ObjectPrefix) continue;
+                    ObjectSetInteger(0, obj_name, OBJPROP_TIMEFRAMES, OBJ_NO_PERIODS);
+                }
+                // Average wick sizes.
+                if (ShowAverageWickSize)
+                {
+                    obj_total = ObjectsTotal(ChartID(), -1, OBJ_LABEL);
+                    // Hide everything:
+                    for (int i = 0; i < obj_total; i++)
+                    {
+                        string obj_name = ObjectName(ChartID(), i, -1, OBJ_LABEL);
+                        if (StringSubstr(obj_name, 0, StringLen(ObjectPrefix)) != ObjectPrefix) continue;
+                        ObjectSetInteger(0, obj_name, OBJPROP_TIMEFRAMES, OBJ_NO_PERIODS);
+                    }
+                }
+                Hidden = true; // Now hidden.
+            }
+            ChartRedraw();
+        }
+    }
 }
 
 int OnCalculate(const int rates_total,
@@ -189,6 +259,8 @@ int OnCalculate(const int rates_total,
                 ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
                 ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
                 ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+                ObjectSetString(0, name, OBJPROP_TOOLTIP, "\n");
+                ObjectSetInteger(0, name, OBJPROP_BACK, DrawTextAsBackground);
             }
         }
         else // Remove tick labels that are no longer needed.
@@ -225,6 +297,8 @@ int OnCalculate(const int rates_total,
                 ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_UPPER);
                 ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
                 ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+                ObjectSetString(0, name, OBJPROP_TOOLTIP, "\n");
+                ObjectSetInteger(0, name, OBJPROP_BACK, DrawTextAsBackground);
             }
         }
         else // Remove tick labels that are no longer needed.
